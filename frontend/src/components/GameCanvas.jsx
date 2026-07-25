@@ -42,7 +42,7 @@ export function GameCanvas({ onShoot, isMyTurn = true }) {
           isAiming: state.isAiming,
           strikerDragX: state.strikerDragX,
           turn: state.turn,
-          particles: state.particles,
+          aimCursorPos: state.aimCursorPos,
         }
       );
 

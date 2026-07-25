@@ -27,6 +27,7 @@ const initialState = () => ({
   isAiming: false,
   strikerDragX: BOARD.CENTER,
   liveStrikerPos: null, // set during physics simulation so striker animates
+  aimCursorPos: null,   // board-space cursor pos while pulling back (for rubber-band draw)
 
   // Players
   player1Name: 'Player 1',

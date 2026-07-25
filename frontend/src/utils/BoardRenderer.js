@@ -13,7 +13,7 @@ export class BoardRenderer {
   render(state, uiState) {
     const ctx = this.ctx;
     const { coins, strikerPos, queenCoverPending, liveStrikerPos, pocketAnimations } = state;
-    const { aimAngle, power, isAiming, strikerDragX, turn } = uiState;
+    const { aimAngle, power, isAiming, strikerDragX, turn, aimCursorPos } = uiState;
 
     ctx.clearRect(0, 0, BOARD.SIZE, BOARD.SIZE);
 
@@ -35,7 +35,7 @@ export class BoardRenderer {
 
     // Draw aim line only when not simulating
     if (isAiming && !liveStrikerPos) {
-      this._drawAimLine(strikerRenderX, strikerRenderY, aimAngle, power);
+      this._drawSlingshot(strikerRenderX, strikerRenderY, aimAngle, power, aimCursorPos);
     }
 
     // Draw striker (moves with physics during simulation)
@@ -315,6 +315,90 @@ export class BoardRenderer {
     ctx.lineTo(ex - Math.cos(angle + arrowAngle) * arrowLen, ey - Math.sin(angle + arrowAngle) * arrowLen);
     ctx.strokeStyle = 'rgba(255, 255, 100, 0.9)';
     ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  /**
+   * Slingshot visual:
+   *  - Rubber-band line from cursor (pull point) to striker
+   *  - Forward aim arrow extending from striker
+   *  - Pull-handle dot at cursor position
+   */
+  _drawSlingshot(sx, sy, shotAngle, power, cursorPos) {
+    const ctx = this.ctx;
+
+    // ── 1. Rubber-band (pull-back line) ──────────────────────────────────
+    if (cursorPos) {
+      const cx = cursorPos.x;
+      const cy = cursorPos.y;
+
+      // Elastic line from cursor to striker
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(sx, sy);
+      ctx.strokeStyle = `rgba(255, 180, 60, ${0.5 + power / 200})`;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([]);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      // Pull handle – glowing dot at cursor
+      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 14);
+      glow.addColorStop(0, 'rgba(255, 200, 80, 0.8)');
+      glow.addColorStop(1, 'rgba(255, 140, 0, 0)');
+      ctx.beginPath();
+      ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+      ctx.fillStyle = glow;
+      ctx.fill();
+
+      // Solid centre dot
+      ctx.beginPath();
+      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 200, 80, 0.95)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // ── 2. Forward aim arrow (shot direction) ────────────────────────────
+    const aimLen  = 55 + power * 1.8;
+    const ex = sx + Math.cos(shotAngle) * aimLen;
+    const ey = sy + Math.sin(shotAngle) * aimLen;
+
+    ctx.save();
+    // Dotted aim line
+    ctx.setLineDash([9, 6]);
+    ctx.strokeStyle = `rgba(255, 255, 100, ${0.35 + power / 180})`;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Arrowhead at the tip
+    const arrowLen = 12;
+    const arrowSpread = 0.42;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(
+      ex - Math.cos(shotAngle - arrowSpread) * arrowLen,
+      ey - Math.sin(shotAngle - arrowSpread) * arrowLen,
+    );
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(
+      ex - Math.cos(shotAngle + arrowSpread) * arrowLen,
+      ey - Math.sin(shotAngle + arrowSpread) * arrowLen,
+    );
+    ctx.strokeStyle = 'rgba(255, 255, 80, 0.95)';
+    ctx.lineWidth = 2.5;
     ctx.stroke();
 
     ctx.restore();

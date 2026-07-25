@@ -5,15 +5,15 @@ import { BOARD, STRIKER_LINE } from '../constants/gameConstants.js';
 /**
  * Hook to manage striker aiming input on the canvas.
  *
- * Interaction model:
- *  1. Striker X is set by the StrikerBar slider (or clicking the canvas).
- *  2. Pointer DOWN on canvas – locks current strikerDragX as the aim origin.
- *  3. Pointer MOVE           – aim angle from locked origin; power = distance.
- *  4. Pointer UP             – shoot.
+ * Slingshot mechanic (matches mobile carrom games):
+ *  1. Striker X is set by the StrikerBar slider.
+ *  2. Pointer DOWN  – lock striker position.
+ *  3. Pointer MOVE  – drag BACKWARD; shot angle = OPPOSITE of drag direction.
+ *                     The further you pull, the more power.
+ *  4. Pointer UP    – release to shoot forward.
  */
 export function useAimInput({ canvasRef, boardScale, onShoot }) {
-  const isDragging = useRef(false);
-  // Holds the X position locked at pointer-down (from slider or canvas click)
+  const isDragging  = useRef(false);
   const lockedStrikerX = useRef(BOARD.CENTER);
 
   const toBoard = useCallback((clientX, clientY) => {
@@ -31,12 +31,9 @@ export function useAimInput({ canvasRef, boardScale, onShoot }) {
     if (isSimulating || status !== 'playing') return;
     e.preventDefault();
 
-    // Lock the striker at whatever position the slider last set (or center by default).
-    // The canvas click does NOT reposition the striker – use the StrikerBar for that.
     lockedStrikerX.current = strikerDragX ?? BOARD.CENTER;
-
     isDragging.current = true;
-    useGameStore.setState({ isAiming: true, power: 10 });
+    useGameStore.setState({ isAiming: true, power: 10, aimCursorPos: null });
   }, []);
 
   const onPointerMove = useCallback((e) => {
@@ -47,28 +44,31 @@ export function useAimInput({ canvasRef, boardScale, onShoot }) {
     const clientY = e.clientY ?? e.touches?.[0]?.clientY;
     const pos = toBoard(clientX, clientY);
 
-    // Aim origin is the LOCKED striker position
     const sx = lockedStrikerX.current;
     const sy = useGameStore.getState().strikerPos.y;
 
-    // Angle: direction from striker to cursor
-    const angle = Math.atan2(pos.y - sy, pos.x - sx);
-
-    // Power: distance from striker position to cursor
     const dx = pos.x - sx;
     const dy = pos.y - sy;
     const dist = Math.sqrt(dx * dx + dy * dy);
+
+    // SLINGSHOT: user drags backward; shot fires in the OPPOSITE direction
+    const pullAngle = Math.atan2(dy, dx);          // direction user dragged
+    const shotAngle = pullAngle + Math.PI;          // shot goes the other way
+
     const power = Math.min(100, Math.max(5, dist * 0.65));
 
-    useGameStore.setState({ aimAngle: angle, power });
+    useGameStore.setState({
+      aimAngle: shotAngle,
+      power,
+      aimCursorPos: { x: pos.x, y: pos.y },        // cursor pos for rubber-band draw
+    });
   }, [toBoard]);
 
   const onPointerUp = useCallback(() => {
     if (!isDragging.current) return;
     isDragging.current = false;
     const state = useGameStore.getState();
-    useGameStore.setState({ isAiming: false });
-    // Shoot from the locked striker X
+    useGameStore.setState({ isAiming: false, aimCursorPos: null });
     onShoot?.(state.aimAngle, state.power, lockedStrikerX.current);
   }, [onShoot]);
 
