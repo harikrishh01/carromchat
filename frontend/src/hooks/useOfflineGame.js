@@ -100,7 +100,7 @@ export function useOfflineGame() {
 
         // If next turn is AI, trigger AI shot after delay
         if (result.status === GAME_STATUS.PLAYING && result.turn === TURN.PLAYER2) {
-          setTimeout(() => triggerAIShot(), 1000);
+          setTimeout(() => triggerAIShot(), 300);
         }
       },
     });

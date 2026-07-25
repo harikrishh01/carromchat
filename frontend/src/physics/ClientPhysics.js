@@ -122,8 +122,8 @@ export class ClientPhysics {
 
       if (onTick) onTick(this._getSnapshot());
 
-      // Check stop
-      const allStopped = [...this.bodies.values()].every(b => Vector.magnitude(b.velocity) < 0.05);
+      // Check stop – higher threshold (0.18) means coins are declared stopped sooner
+      const allStopped = [...this.bodies.values()].every(b => Vector.magnitude(b.velocity) < 0.18);
       if (allStopped) {
         idleFrames++;
         if (idleFrames >= MAX_IDLE) {
