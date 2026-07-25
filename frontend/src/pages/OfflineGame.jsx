@@ -63,7 +63,7 @@ export function OfflineGame() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center p-2 gap-4">
+    <div className="min-h-screen bg-gray-950 flex flex-col items-center p-2 pt-2 gap-2">
       {/* Top bar */}
       <div className="w-full max-w-2xl flex items-center justify-between px-2">
         <button
@@ -90,16 +90,18 @@ export function OfflineGame() {
         />
       </div>
 
-      {/* Board */}
-      <div className="flex-1 flex items-center justify-center w-full">
-        <GameCanvas
-          onShoot={handleShoot}
-          isMyTurn={store.turn === TURN.PLAYER1 && !store.isSimulating}
-        />
-      </div>
+      {/* Board + Slider — grouped so slider sits directly below the board */}
+      <div className="flex flex-col items-center gap-2 w-full max-w-2xl flex-1 justify-center">
+        <div className="flex items-center justify-center w-full">
+          <GameCanvas
+            onShoot={handleShoot}
+            isMyTurn={store.turn === TURN.PLAYER1 && !store.isSimulating}
+          />
+        </div>
 
-      {/* Striker position bar */}
-      <StrikerBar isMyTurn={store.turn === TURN.PLAYER1 && !store.isSimulating} />
+        {/* Striker position bar — directly below the board */}
+        <StrikerBar isMyTurn={store.turn === TURN.PLAYER1 && !store.isSimulating} />
+      </div>
 
       {/* Winner popup */}
       {store.status === GAME_STATUS.FINISHED && (

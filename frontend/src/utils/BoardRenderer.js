@@ -25,6 +25,7 @@ export class BoardRenderer {
     this._drawDividers();
     this._drawCenterCircles();
     this._drawStrikerLines(turn);
+    this._drawZoneIndicator(turn);  // shades opponent's half so player knows where NOT to place striker
 
     // Draw coins (non-pocketed)
     coins.filter(c => !c.pocketed).forEach(coin => this._drawCoin(coin, queenCoverPending));
@@ -201,6 +202,47 @@ export class BoardRenderer {
 
     drawLine(STRIKER_LINE.Y_BOTTOM, turn === 'player1' ? 1 : 0.3, turn === 'player1');
     drawLine(STRIKER_LINE.Y_TOP,    turn === 'player2' ? 1 : 0.3, turn === 'player2');
+  }
+
+  /**
+   * Shade the opponent's half of the board with a subtle red overlay
+   * so the player clearly sees they cannot place the striker there.
+   */
+  _drawZoneIndicator(turn) {
+    const ctx = this.ctx;
+    const { BORDER, SIZE, CENTER } = BOARD;
+
+    // The opponent's half is the TOP half for Player 1, BOTTOM for Player 2
+    const isP1 = turn === 'player1';
+    const zoneY     = isP1 ? BORDER : CENTER;
+    const zoneH     = CENTER - BORDER;   // half of play area
+
+    ctx.save();
+    // Subtle red diagonal hatch to mark forbidden zone
+    ctx.beginPath();
+    ctx.rect(BORDER, zoneY, SIZE - BORDER * 2, zoneH);
+    ctx.fillStyle = 'rgba(220, 40, 40, 0.07)';
+    ctx.fill();
+
+    // "NO ENTRY" border line at the centre divider
+    const dividerY = CENTER;
+    ctx.beginPath();
+    ctx.moveTo(BORDER, dividerY);
+    ctx.lineTo(SIZE - BORDER, dividerY);
+    ctx.strokeStyle = 'rgba(220, 80, 80, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Small label
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillStyle = 'rgba(255, 80, 80, 0.50)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('OPPONENT ZONE', CENTER, isP1 ? BORDER + zoneH / 2 : CENTER + zoneH / 2);
+
+    ctx.restore();
   }
 
   _drawCoin(coin, queenPending) {
