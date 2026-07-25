@@ -27,10 +27,10 @@ export class ClientPhysics {
     const { SIZE, BORDER } = BOARD;
     const t = 40;
     const walls = [
-      Bodies.rectangle(SIZE / 2, BORDER / 2, SIZE, t, { isStatic: true, label: 'wall_top',    restitution: 0.72 }),
-      Bodies.rectangle(SIZE / 2, SIZE - BORDER / 2, SIZE, t, { isStatic: true, label: 'wall_bottom', restitution: 0.72 }),
-      Bodies.rectangle(BORDER / 2, SIZE / 2, t, SIZE, { isStatic: true, label: 'wall_left',   restitution: 0.72 }),
-      Bodies.rectangle(SIZE - BORDER / 2, SIZE / 2, t, SIZE, { isStatic: true, label: 'wall_right',  restitution: 0.72 }),
+      Bodies.rectangle(SIZE / 2, BORDER / 2, SIZE, t, { isStatic: true, label: 'wall_top',    restitution: 0.78, friction: 0.01 }),
+      Bodies.rectangle(SIZE / 2, SIZE - BORDER / 2, SIZE, t, { isStatic: true, label: 'wall_bottom', restitution: 0.78, friction: 0.01 }),
+      Bodies.rectangle(BORDER / 2, SIZE / 2, t, SIZE, { isStatic: true, label: 'wall_left',   restitution: 0.78, friction: 0.01 }),
+      Bodies.rectangle(SIZE - BORDER / 2, SIZE / 2, t, SIZE, { isStatic: true, label: 'wall_right',  restitution: 0.78, friction: 0.01 }),
     ];
     World.add(this.world, walls);
   }

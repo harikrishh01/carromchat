@@ -7,6 +7,9 @@ export class BoardRenderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+
+    // Smoothed slingshot state – lerped each frame for a fluid rubber-band feel
+    this._aim = { cx: 0, cy: 0, power: 10, active: false };
   }
 
   /** Main render call - call every frame */
@@ -36,6 +39,9 @@ export class BoardRenderer {
     // Draw aim line only when not simulating
     if (isAiming && !liveStrikerPos) {
       this._drawSlingshot(strikerRenderX, strikerRenderY, aimAngle, power, aimCursorPos);
+    } else {
+      // Reset smooth state so next drag starts clean (no ghost position)
+      this._aim.active = false;
     }
 
     // Draw striker (moves with physics during simulation)
@@ -321,86 +327,96 @@ export class BoardRenderer {
   }
 
   /**
-   * Slingshot visual:
-   *  - Rubber-band line from cursor (pull point) to striker
-   *  - Forward aim arrow extending from striker
-   *  - Pull-handle dot at cursor position
+   * Slingshot visual with lerp smoothing:
+   *  - Cursor / pull-handle glides toward actual position each frame (elastic feel)
+   *  - Power meter and aim arrow length also ease smoothly
+   *  - On first frame of aiming, snap instantly so there's no initial lag
    */
   _drawSlingshot(sx, sy, shotAngle, power, cursorPos) {
     const ctx = this.ctx;
+    const a   = this._aim;
+    // Lerp factor: 0.18 = smooth but responsive (raise for faster, lower for more lag)
+    const LERP = 0.18;
 
-    // ── 1. Rubber-band (pull-back line) ──────────────────────────────────
-    if (cursorPos) {
-      const cx = cursorPos.x;
-      const cy = cursorPos.y;
+    if (!cursorPos) { a.active = false; return; }
 
-      // Elastic line from cursor to striker
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(sx, sy);
-      ctx.strokeStyle = `rgba(255, 180, 60, ${0.5 + power / 200})`;
-      ctx.lineWidth = 3;
-      ctx.setLineDash([]);
-      ctx.lineCap = 'round';
-      ctx.stroke();
-
-      // Pull handle – glowing dot at cursor
-      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 14);
-      glow.addColorStop(0, 'rgba(255, 200, 80, 0.8)');
-      glow.addColorStop(1, 'rgba(255, 140, 0, 0)');
-      ctx.beginPath();
-      ctx.arc(cx, cy, 14, 0, Math.PI * 2);
-      ctx.fillStyle = glow;
-      ctx.fill();
-
-      // Solid centre dot
-      ctx.beginPath();
-      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 200, 80, 0.95)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      ctx.restore();
+    if (!a.active) {
+      // First frame of this drag – snap to cursor immediately (no startup lag)
+      a.cx = cursorPos.x;
+      a.cy = cursorPos.y;
+      a.power = power;
+      a.active = true;
+    } else {
+      // Lerp cursor position and power toward target each render frame
+      a.cx    += (cursorPos.x - a.cx)    * LERP;
+      a.cy    += (cursorPos.y - a.cy)    * LERP;
+      a.power += (power       - a.power) * LERP;
     }
 
-    // ── 2. Forward aim arrow (shot direction) ────────────────────────────
-    const aimLen  = 55 + power * 1.8;
-    const ex = sx + Math.cos(shotAngle) * aimLen;
-    const ey = sy + Math.sin(shotAngle) * aimLen;
+    const cx    = a.cx;
+    const cy    = a.cy;
+    const sPow  = a.power;
+
+    // Recompute shot angle from smoothed cursor so the arrow also eases
+    const smoothShotAngle = Math.atan2(sy - cy, sx - cx); // opposite of pull
+
+    // ── 1. Rubber-band elastic line (cursor → striker) ───────────────────
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(sx, sy);
+    ctx.strokeStyle = `rgba(255, 180, 60, ${0.45 + sPow / 220})`;
+    ctx.lineWidth   = 3;
+    ctx.lineCap     = 'round';
+    ctx.setLineDash([]);
+    ctx.stroke();
+
+    // Outer glow around pull-handle
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 16);
+    glow.addColorStop(0, 'rgba(255, 200, 80, 0.75)');
+    glow.addColorStop(1, 'rgba(255, 140, 0, 0)');
+    ctx.beginPath();
+    ctx.arc(cx, cy, 16, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
+
+    // Solid pull-handle dot
+    ctx.beginPath();
+    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+    ctx.fillStyle   = 'rgba(255, 205, 80, 0.95)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+    ctx.lineWidth   = 1.5;
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // ── 2. Forward aim arrow (shot direction, also smoothed) ──────────────
+    const aimLen = 50 + sPow * 1.8;
+    const ex = sx + Math.cos(smoothShotAngle) * aimLen;
+    const ey = sy + Math.sin(smoothShotAngle) * aimLen;
 
     ctx.save();
-    // Dotted aim line
     ctx.setLineDash([9, 6]);
-    ctx.strokeStyle = `rgba(255, 255, 100, ${0.35 + power / 180})`;
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
+    ctx.strokeStyle = `rgba(255, 255, 100, ${0.3 + sPow / 170})`;
+    ctx.lineWidth   = 2;
+    ctx.lineCap     = 'round';
     ctx.beginPath();
     ctx.moveTo(sx, sy);
     ctx.lineTo(ex, ey);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Arrowhead at the tip
-    const arrowLen = 12;
-    const arrowSpread = 0.42;
+    // Arrowhead
+    const aLen  = 12;
+    const aSprd = 0.42;
     ctx.beginPath();
     ctx.moveTo(ex, ey);
-    ctx.lineTo(
-      ex - Math.cos(shotAngle - arrowSpread) * arrowLen,
-      ey - Math.sin(shotAngle - arrowSpread) * arrowLen,
-    );
+    ctx.lineTo(ex - Math.cos(smoothShotAngle - aSprd) * aLen, ey - Math.sin(smoothShotAngle - aSprd) * aLen);
     ctx.moveTo(ex, ey);
-    ctx.lineTo(
-      ex - Math.cos(shotAngle + arrowSpread) * arrowLen,
-      ey - Math.sin(shotAngle + arrowSpread) * arrowLen,
-    );
+    ctx.lineTo(ex - Math.cos(smoothShotAngle + aSprd) * aLen, ey - Math.sin(smoothShotAngle + aSprd) * aLen);
     ctx.strokeStyle = 'rgba(255, 255, 80, 0.95)';
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth   = 2.5;
     ctx.stroke();
-
     ctx.restore();
   }
 

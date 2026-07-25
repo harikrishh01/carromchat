@@ -20,17 +20,17 @@ export const POCKET = {
 export const COIN = {
   RADIUS: 18,
   MASS: 1,
-  FRICTION: 0.025,      // slight surface resistance
-  RESTITUTION: 0.76,    // moderately elastic bounces
-  FRICTION_AIR: 0.016,  // some air drag – coins settle naturally
+  FRICTION: 0.008,      // near-zero surface friction – powder-smooth board
+  RESTITUTION: 0.82,    // clean elastic bounces
+  FRICTION_AIR: 0.010,  // low air drag – coins glide long and naturally
 };
 
 export const STRIKER = {
   RADIUS: 22,
   MASS: 1.5,
-  FRICTION: 0.025,
-  RESTITUTION: 0.76,
-  FRICTION_AIR: 0.016,
+  FRICTION: 0.008,
+  RESTITUTION: 0.82,
+  FRICTION_AIR: 0.010,
 };
 
 export const STRIKER_LINE = {
