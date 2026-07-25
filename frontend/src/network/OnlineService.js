@@ -37,10 +37,13 @@ export class OnlineService {
   }
 
   _registerEvents() {
-    const store = useGameStore.getState();
     const s = this.socket;
 
-    s.on('room_created', ({ roomCode, playerNum, state }) => {
+    // Use .off().on() for every event so re-connecting or StrictMode double-mount
+    // never registers duplicate handlers that fire events twice.
+
+    s.off('room_created').on('room_created', ({ roomCode, playerNum, state }) => {
+      const store = useGameStore.getState();
       store.setRoomCode(roomCode);
       store.setMyPlayerNum(playerNum);
       store.applyResult(state);
@@ -48,44 +51,49 @@ export class OnlineService {
       window.__onRoomCreated?.({ roomCode, playerNum });
     });
 
-    s.on('room_joined', ({ roomCode, playerNum, state }) => {
+    s.off('room_joined').on('room_joined', ({ roomCode, playerNum, state }) => {
+      const store = useGameStore.getState();
       store.setRoomCode(roomCode);
       store.setMyPlayerNum(playerNum);
       store.applyResult(state);
       window.__onRoomJoined?.({ roomCode, playerNum });
     });
 
-    s.on('game_start', ({ state, rematch }) => {
-      store.applyResult(state);
-      useGameStore.setState({ status: GAME_STATUS.PLAYING });
+    s.off('game_start').on('game_start', ({ state, rematch }) => {
+      useGameStore.getState().applyResult(state);
+      useGameStore.setState({ status: GAME_STATUS.PLAYING, isSimulating: false });
       window.__onGameStart?.({ rematch });
     });
 
-    s.on('shot_result', (result) => {
+    s.off('shot_result').on('shot_result', (result) => {
       const { state, pocketed, strikerPocketed, foul, extraTurn } = result;
-      store.applyResult(state);
+      // Apply server-authoritative state (also resets isSimulating → false)
+      useGameStore.getState().applyResult(state);
       window.__onShotResult?.({ pocketed, strikerPocketed, foul, extraTurn });
     });
 
-    s.on('game_over', ({ winner, scores }) => {
-      useGameStore.setState({ winner, scores, status: GAME_STATUS.FINISHED });
+    s.off('game_over').on('game_over', ({ winner, scores }) => {
+      useGameStore.setState({ winner, scores, status: GAME_STATUS.FINISHED, isSimulating: false });
       window.__onGameOver?.({ winner, scores });
     });
 
-    s.on('turn_timeout', ({ newTurn, state }) => {
-      store.applyResult(state);
+    s.off('turn_timeout').on('turn_timeout', ({ newTurn, state }) => {
+      useGameStore.getState().applyResult(state);
       window.__onTurnTimeout?.({ newTurn });
     });
 
-    s.on('player_disconnected', ({ playerNum, message }) => {
+    s.off('player_disconnected').on('player_disconnected', ({ playerNum, message }) => {
+      useGameStore.setState({ isSimulating: false }); // unblock UI
       window.__onPlayerDisconnected?.({ playerNum, message });
     });
 
-    s.on('error', ({ message }) => {
+    s.off('error').on('error', ({ message }) => {
+      useGameStore.setState({ isSimulating: false }); // unblock UI on error
       window.__onSocketError?.({ message });
     });
 
-    s.on('invalid_shot', ({ reason }) => {
+    s.off('invalid_shot').on('invalid_shot', ({ reason }) => {
+      useGameStore.setState({ isSimulating: false }); // unblock after rejected shot
       window.__onInvalidShot?.({ reason });
     });
   }

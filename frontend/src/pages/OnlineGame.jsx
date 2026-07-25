@@ -28,17 +28,23 @@ export function OnlineGame() {
     onError: ({ message }) => notify(message),
   });
 
-  const isMyTurn = store.myPlayerNum === store.turn && !store.isSimulating && store.status === GAME_STATUS.PLAYING;
+  // isMyTurn: only true when it's this player's turn AND not waiting for server
+  const isMyTurn = store.myPlayerNum === store.turn
+    && !store.isSimulating
+    && store.status === GAME_STATUS.PLAYING;
 
   const handleShoot = useCallback((angle, power, strikerX) => {
+    if (!isMyTurn) return;
     shoot(angle, power, strikerX);
-  }, [shoot]);
+  }, [isMyTurn, shoot]);
 
+  // Resolve player names from server-synced players object
   const p1 = store.players?.player1?.name || store.player1Name || 'Player 1';
   const p2 = store.players?.player2?.name || store.player2Name || 'Player 2';
+  const myName = store.myPlayerNum === 'player1' ? p1 : p2;
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center p-2 gap-4">
+    <div className="min-h-screen bg-gray-950 flex flex-col items-center p-2 pt-2 gap-2">
       {/* Top bar */}
       <div className="w-full max-w-2xl flex items-center justify-between px-2">
         <button onClick={() => navigate('/online')} className="text-gray-400 hover:text-white text-sm">
@@ -51,10 +57,10 @@ export function OnlineGame() {
         <button onClick={() => setShowSettings(true)} className="text-gray-400 hover:text-white text-sm">⚙️</button>
       </div>
 
-      {/* My player indicator */}
+      {/* Player identity */}
       <div className="text-xs text-gray-500">
-        You are: <span className="text-yellow-400 font-bold">{store.myPlayerNum === 'player1' ? p1 : p2}</span>
-        {' '}({store.myPlayerNum === 'player1' ? 'White' : 'Black'})
+        You are: <span className="text-yellow-400 font-bold">{myName}</span>
+        {' '}({store.myPlayerNum === 'player1' ? 'White ○' : 'Black ●'})
       </div>
 
       {/* HUD */}
@@ -62,13 +68,27 @@ export function OnlineGame() {
         <GameHUD player1Name={p1} player2Name={p2} shotTimeLeft={15} />
       </div>
 
-      {/* Board */}
-      <div className="flex-1 flex items-center justify-center w-full">
-        <GameCanvas onShoot={handleShoot} isMyTurn={isMyTurn} />
-      </div>
+      {/* Board + Slider grouped – slider directly below board */}
+      <div className="flex flex-col items-center gap-2 w-full max-w-2xl flex-1 justify-center relative">
+        <div className="flex items-center justify-center w-full relative">
+          <GameCanvas onShoot={handleShoot} isMyTurn={isMyTurn} />
 
-      {/* Striker position bar */}
-      <StrikerBar isMyTurn={isMyTurn} />
+          {/* Opponent turn overlay – covers board so they literally cannot interact */}
+          {!isMyTurn && store.status === GAME_STATUS.PLAYING && (
+            <div className="absolute inset-0 flex flex-col items-center justify-end pb-6 pointer-events-auto"
+              style={{ background: 'rgba(0,0,0,0.10)' }}>
+              <div className="bg-gray-900/90 backdrop-blur rounded-xl px-6 py-3 border border-gray-700 text-center">
+                {store.isSimulating
+                  ? <span className="text-yellow-400 text-sm font-bold animate-pulse">⏳ Processing shot…</span>
+                  : <span className="text-gray-300 text-sm font-bold animate-pulse">⏳ Opponent’s turn…</span>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Striker position bar – only useful on your turn */}
+        <StrikerBar isMyTurn={isMyTurn} />
+      </div>
 
       {/* Notification */}
       {notification && (

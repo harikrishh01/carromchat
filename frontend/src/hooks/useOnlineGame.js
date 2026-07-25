@@ -55,8 +55,12 @@ export function useOnlineGame({ onRoomCreated, onRoomJoined, onGameStart, onShot
   }, []);
 
   const shoot = useCallback((angle, power, strikerX) => {
-    const { roomCode, myPlayerNum, turn, status } = useGameStore.getState();
-    if (status !== GAME_STATUS.PLAYING || myPlayerNum !== turn) return;
+    const { roomCode, myPlayerNum, turn, status, isSimulating } = useGameStore.getState();
+    // Hard guards: wrong turn, game not active, or already waiting for server response
+    if (status !== GAME_STATUS.PLAYING || myPlayerNum !== turn || isSimulating) return;
+
+    // Immediately lock the UI so this player cannot shoot again until server responds
+    useGameStore.setState({ isSimulating: true });
     sound.playShoot();
     onlineService.shoot({ angle, power, strikerX, roomCode });
   }, [sound]);

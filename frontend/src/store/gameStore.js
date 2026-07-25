@@ -41,6 +41,7 @@ const initialState = () => ({
   roomCode: null,
   myPlayerNum: null,
   opponentName: null,
+  players: {},  // { player1: { name, color }, player2: { name, color } } – from server
 
   // Sound
   soundEnabled: true,
@@ -113,22 +114,22 @@ export const useGameStore = create((set, get) => ({
    */
   applyResult: ({
     coins, scores, fouls, turn, queenPocketed, queenCoverPending,
-    queenHolder, lastFoul, winner, status, strikerPos,
+    queenHolder, lastFoul, winner, status, strikerPos, players,
   }) => {
     const updates = {};
-    if (coins !== undefined) updates.coins = coins;
-    if (scores !== undefined) updates.scores = scores;
-    if (fouls !== undefined) updates.fouls = fouls;
-    if (turn !== undefined) updates.turn = turn;
-    if (queenPocketed !== undefined) updates.queenPocketed = queenPocketed;
+    if (coins      !== undefined) updates.coins      = coins;
+    if (scores     !== undefined) updates.scores     = scores;
+    if (fouls      !== undefined) updates.fouls      = fouls;
+    if (turn       !== undefined) updates.turn       = turn;
+    if (queenPocketed    !== undefined) updates.queenPocketed    = queenPocketed;
     if (queenCoverPending !== undefined) updates.queenCoverPending = queenCoverPending;
     if (queenHolder !== undefined) updates.queenHolder = queenHolder;
-    if (lastFoul !== undefined) updates.lastFoul = lastFoul;
-    if (winner !== undefined) updates.winner = winner;
-    if (status !== undefined) updates.status = status;
+    if (lastFoul   !== undefined) updates.lastFoul   = lastFoul;
+    if (winner     !== undefined) updates.winner     = winner;
+    if (status     !== undefined) updates.status     = status;
+    if (players    !== undefined) updates.players    = players;  // sync player names from server
     if (strikerPos !== undefined) {
-      updates.strikerPos = strikerPos;
-      // Reset striker to center of baseline for the new turn
+      updates.strikerPos  = strikerPos;
       updates.strikerDragX = BOARD.CENTER;
     }
     updates.isSimulating = false;
