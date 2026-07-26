@@ -62,7 +62,7 @@ export function MainMenu() {
         </Button>
       </div>
 
-      <p className="mt-8 text-gray-600 text-xs">v1.0.0 – Production Ready</p>
+      <p className="mt-8 text-gray-600 text-xs">v1.0.1 – Production Ready</p>
 
       {/* Settings overlay */}
       {showSettings && (

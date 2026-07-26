@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../store/gameStore.js';
 import { useOnlineGame } from '../hooks/useOnlineGame.js';
@@ -7,30 +7,40 @@ import { GameHUD } from '../components/GameHUD.jsx';
 import { WinnerPopup } from '../components/WinnerPopup.jsx';
 import { SettingsPanel } from '../components/SettingsPanel.jsx';
 import { StrikerBar } from '../components/StrikerBar.jsx';
-import { GAME_STATUS } from '../constants/gameConstants.js';
+import { GAME_STATUS, SHOT_TIMEOUT } from '../constants/gameConstants.js';
 
 export function OnlineGame() {
   const navigate = useNavigate();
   const store = useGameStore();
   const [showSettings, setShowSettings] = useState(false);
-  const [notification, setNotification] = useState('');
+  const [banner, setBanner] = useState('');          // persistent status banner
+  const [notification, setNotification] = useState(''); // temporary toast
+  const [shotTimeLeft, setShotTimeLeft] = useState(15);
+  const timerRef = useRef(null);
 
-  const notify = (msg) => {
-    setNotification(msg);
-    setTimeout(() => setNotification(''), 3000);
+  const notify = (msg, persist = false) => {
+    if (persist) {
+      setBanner(msg);
+    } else {
+      setNotification(msg);
+      setTimeout(() => setNotification(''), 4000);
+    }
   };
 
   const { shoot, requestRematch } = useOnlineGame({
-    onGameStart: () => notify('Game started!'),
-    onShotResult: ({ foul }) => { if (foul) notify(`Foul: ${foul.replace(/_/g, ' ')}`); },
+    onGameStart: () => { setBanner(''); notify('Game started!'); },
+    onShotResult: ({ foul }) => {
+      if (foul) notify(`Foul: ${foul.replace(/_/g, ' ')}`);
+    },
     onGameOver: () => {},
-    onDisconnect: ({ message }) => notify(message),
+    onDisconnect: ({ message }) => notify(message, true /* persist */),
+    onReconnect: ({ message }) => { setBanner(''); notify(message); },
+    onConnectionLost: ({ message }) => { notify(message, true); setTimeout(() => navigate('/online'), 3000); },
     onError: ({ message }) => notify(message),
   });
 
-  // Player 2 sees the board flipped 180° so their baseline is always at the bottom
-  const flipped = store.myPlayerNum === 'player2';
-
+  // Player 2 sees the board flipped 180° so their baseline is at the bottom
+  const flipped  = store.myPlayerNum === 'player2';
   const isMyTurn = store.myPlayerNum === store.turn
     && !store.isSimulating
     && store.status === GAME_STATUS.PLAYING;
@@ -40,13 +50,43 @@ export function OnlineGame() {
     shoot(angle, power, strikerX);
   }, [isMyTurn, shoot]);
 
-  // Resolve player names from server-synced players object
-  const p1 = store.players?.player1?.name || store.player1Name || 'Player 1';
-  const p2 = store.players?.player2?.name || store.player2Name || 'Player 2';
+  // ── Turn countdown timer ───────────────────────────────────────────────────
+  // Starts at the beginning of each of MY turns, resets when turn switches.
+  const TURN_SECS = Math.floor(SHOT_TIMEOUT / 1000);
+
+  useEffect(() => {
+    if (!isMyTurn) {
+      clearInterval(timerRef.current);
+      setShotTimeLeft(TURN_SECS);
+      return;
+    }
+    setShotTimeLeft(TURN_SECS);
+    timerRef.current = setInterval(() => {
+      setShotTimeLeft(prev => {
+        if (prev <= 1) { clearInterval(timerRef.current); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [isMyTurn, TURN_SECS]);
+
+  const p1     = store.players?.player1?.name || store.player1Name || 'Player 1';
+  const p2     = store.players?.player2?.name || store.player2Name || 'Player 2';
   const myName = store.myPlayerNum === 'player1' ? p1 : p2;
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center p-2 pt-2 gap-2">
+
+      {/* Persistent banner (disconnection / sync errors) */}
+      {banner && (
+        <div className="w-full max-w-2xl bg-red-900/80 text-red-200 text-sm font-semibold px-4 py-2 rounded-xl text-center border border-red-700">
+          {banner}
+          {banner.includes('Waiting') && (
+            <span className="ml-2 animate-pulse">●</span>
+          )}
+        </div>
+      )}
+
       {/* Top bar */}
       <div className="w-full max-w-2xl flex items-center justify-between px-2">
         <button onClick={() => navigate('/online')} className="text-gray-400 hover:text-white text-sm">
@@ -65,47 +105,47 @@ export function OnlineGame() {
         {' '}({store.myPlayerNum === 'player1' ? 'White ○' : 'Black ●'})
       </div>
 
-      {/* HUD */}
+      {/* HUD — passes live shotTimeLeft so timer shows */}
       <div className="w-full max-w-2xl px-2">
-        <GameHUD player1Name={p1} player2Name={p2} shotTimeLeft={15} />
+        <GameHUD
+          player1Name={p1}
+          player2Name={p2}
+          shotTimeLeft={isMyTurn ? shotTimeLeft : TURN_SECS}
+        />
       </div>
 
-      {/* Board + Slider grouped – slider directly below board */}
+      {/* Board + Slider grouped directly below board */}
       <div className="flex flex-col items-center gap-2 w-full max-w-2xl flex-1 justify-center relative">
         <div className="flex items-center justify-center w-full relative">
           <GameCanvas onShoot={handleShoot} isMyTurn={isMyTurn} flipped={flipped} />
 
-          {/* Opponent turn overlay – covers board so they literally cannot interact */}
-          {!isMyTurn && store.status === GAME_STATUS.PLAYING && (
-            <div className="absolute inset-0 flex flex-col items-center justify-end pb-6 pointer-events-auto"
-              style={{ background: 'rgba(0,0,0,0.10)' }}>
+          {/* Overlay when it's not my turn — blocks interaction visually */}
+          {!isMyTurn && store.status === GAME_STATUS.PLAYING && !banner && (
+            <div
+              className="absolute inset-0 flex flex-col items-center justify-end pb-6 pointer-events-auto"
+              style={{ background: 'rgba(0,0,0,0.08)' }}
+            >
               <div className="bg-gray-900/90 backdrop-blur rounded-xl px-6 py-3 border border-gray-700 text-center">
                 {store.isSimulating
-                  ? <span className="text-yellow-400 text-sm font-bold animate-pulse">⏳ Processing shot…</span>
-                  : <span className="text-gray-300 text-sm font-bold animate-pulse">⏳ Opponent’s turn…</span>}
+                  ? <span className="text-yellow-400 text-sm font-bold animate-pulse">⏳ Animating…</span>
+                  : <span className="text-gray-300 text-sm font-bold animate-pulse">⏳ Opponent's turn…</span>}
               </div>
             </div>
           )}
         </div>
 
-        {/* Striker position bar – only useful on your turn */}
         <StrikerBar isMyTurn={isMyTurn} flipped={flipped} />
       </div>
 
-      {/* Notification */}
+      {/* Toast notification */}
       {notification && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-xl shadow-lg text-sm z-40 animate-fadeIn">
           {notification}
         </div>
       )}
 
-      {/* Winner popup */}
       {store.status === GAME_STATUS.FINISHED && (
-        <WinnerPopup
-          player1Name={p1}
-          player2Name={p2}
-          onRematch={requestRematch}
-        />
+        <WinnerPopup player1Name={p1} player2Name={p2} onRematch={requestRematch} />
       )}
 
       {showSettings && (
