@@ -43,6 +43,12 @@ const initialState = () => ({
   opponentName: null,
   players: {},  // { player1: { name, color }, player2: { name, color } } – from server
 
+  // Server-side turn timestamp for synchronized countdown
+  turnStartedAt: null,
+
+  // Pending shot from server — watched by OnlineGame.jsx to trigger animation
+  pendingOnlineShot: null,  // { shotParams, serverState, foul }
+
   // Sound
   soundEnabled: true,
   musicEnabled: true,
@@ -114,7 +120,7 @@ export const useGameStore = create((set, get) => ({
    */
   applyResult: ({
     coins, scores, fouls, turn, queenPocketed, queenCoverPending,
-    queenHolder, lastFoul, winner, status, strikerPos, players,
+    queenHolder, lastFoul, winner, status, strikerPos, players, turnStartedAt,
   }) => {
     const updates = {};
     if (coins      !== undefined) updates.coins      = coins;
@@ -128,6 +134,7 @@ export const useGameStore = create((set, get) => ({
     if (winner     !== undefined) updates.winner     = winner;
     if (status     !== undefined) updates.status     = status;
     if (players    !== undefined) updates.players    = players;  // sync player names from server
+    if (turnStartedAt !== undefined) updates.turnStartedAt = turnStartedAt;
     if (strikerPos !== undefined) {
       updates.strikerPos  = strikerPos;
       updates.strikerDragX = BOARD.CENTER;

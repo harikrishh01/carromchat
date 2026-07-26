@@ -120,11 +120,10 @@ export function useOnlineGame(callbacks = {}) {
       cbRef.current.onGameStart?.({});
     });
 
-    // ── The critical event — runs animation for BOTH players ──────────────
+    // ── Shot result: store in Zustand; OnlineGame.jsx watches and animates ──
+    // This decouples animation from socket callbacks so it runs in React lifecycle.
     socket.off('shot_result').on('shot_result', ({ state: serverState, shotParams, foul }) => {
-      _runShotAnimation(physicsRef, soundRef, shotParams, serverState, () => {
-        cbRef.current.onShotResult?.({ foul });
-      });
+      useGameStore.setState({ pendingOnlineShot: { shotParams, serverState, foul } });
     });
 
     // game_over arrives nearly simultaneously with shot_result (server sends both).
@@ -143,6 +142,7 @@ export function useOnlineGame(callbacks = {}) {
 
     // Disconnection / reconnection
     socket.off('player_disconnected').on('player_disconnected', ({ playerNum, message }) => {
+      // Don't end the game immediately — give 60s reconnect window (server will fire connection_lost)
       useGameStore.setState({ isSimulating: false });
       cbRef.current.onDisconnect?.({ playerNum, message });
     });
@@ -152,6 +152,11 @@ export function useOnlineGame(callbacks = {}) {
     });
 
     socket.off('connection_lost').on('connection_lost', ({ message }) => {
+      // 60s elapsed with no reconnect — end the match, remaining player wins
+      const { myPlayerNum } = useGameStore.getState();
+      if (myPlayerNum) {
+        useGameStore.setState({ winner: myPlayerNum, status: GAME_STATUS.FINISHED, isSimulating: false });
+      }
       cbRef.current.onConnectionLost?.({ message });
     });
 
@@ -224,4 +229,5 @@ export function useOnlineGame(callbacks = {}) {
  *    their current coin positions using those params.
  *  - When animation completes the server's authoritative final state is applied.
  *    This keeps both screens in sync while showing smooth real-time physics.
- */
+ */
+
