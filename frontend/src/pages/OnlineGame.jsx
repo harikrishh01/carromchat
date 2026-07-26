@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../store/gameStore.js';
 import { useOnlineGame } from '../hooks/useOnlineGame.js';
@@ -7,93 +7,26 @@ import { GameHUD } from '../components/GameHUD.jsx';
 import { WinnerPopup } from '../components/WinnerPopup.jsx';
 import { SettingsPanel } from '../components/SettingsPanel.jsx';
 import { StrikerBar } from '../components/StrikerBar.jsx';
-import { GAME_STATUS, SHOT_TIMEOUT, POCKET, COIN_COLORS } from '../constants/gameConstants.js';
-import { ClientPhysics } from '../physics/ClientPhysics.js';
-import { useSoundManager } from '../hooks/useSoundManager.js';
-
-// ── Coin VFX helpers (same logic as useOfflineGame) ──────────────────────────
-function _spawnPocketVFX(id, pos, coins) {
-  const coinData = coins.find(c => c.id === id);
-  const nearest = POCKET.POSITIONS.reduce((best, p) => {
-    const d = Math.hypot(p.x - pos.x, p.y - pos.y);
-    return d < best.d ? { p, d } : best;
-  }, { p: POCKET.POSITIONS[0], d: Infinity }).p;
-  useGameStore.getState().addPocketAnimation({
-    id: `${id}_${Date.now()}`,
-    coinId: id,
-    color: coinData?.color ?? 'black',
-    isQueen: id === 'queen',
-    x: pos.x, y: pos.y,
-    pocketX: nearest.x, pocketY: nearest.y,
-    startTime: Date.now(),
-    duration: 350,
-  });
-}
+import { GAME_STATUS, SHOT_TIMEOUT } from '../constants/gameConstants.js';
+import { onlineAnimator } from '../services/onlineAnimator.js';
 
 const TURN_SECS = Math.floor(SHOT_TIMEOUT / 1000);
 
 export function OnlineGame() {
   const navigate   = useNavigate();
   const store      = useGameStore();
-  const sound      = useSoundManager();
   const [showSettings, setShowSettings] = useState(false);
   const [banner,       setBanner]       = useState('');
   const [notification, setNotification] = useState('');
   const [shotTimeLeft, setShotTimeLeft] = useState(TURN_SECS);
 
-  // ── Physics lives here — guaranteed to exist when animation is needed ──
-  const physicsRef = useRef(null);
+  // ── Init the module-level physics singleton for online animation ──────────
+  // onlineAnimator.init() creates a fresh ClientPhysics instance.
+  // This runs before any shot can arrive because game_start fires first.
   useEffect(() => {
-    physicsRef.current = new ClientPhysics();
-    return () => { physicsRef.current?.destroy(); physicsRef.current = null; };
+    onlineAnimator.init();
+    return () => onlineAnimator.destroy();
   }, []);
-
-  // ── animateShotRef is re-assigned every render, so it always captures
-  //    the latest physicsRef.current and sound. The socket handler calls it
-  //    directly — no Zustand intermediate, no useEffect timing dependency.
-  const animateShotRef = useRef(null);
-  animateShotRef.current = (shotParams, serverState, foul) => {
-    const physics  = physicsRef.current;
-    const preState = useGameStore.getState();
-
-    if (!physics || !shotParams) {
-      preState.applyResult(serverState);
-      if (foul) sound.playFoul();
-      if (serverState.winner) sound.playWin();
-      return;
-    }
-
-    useGameStore.setState({ isSimulating: true });
-    physics.loadState(preState.coins, { x: shotParams.strikerX, y: preState.strikerPos.y });
-
-    physics.shoot(shotParams.angle, shotParams.power, {
-      onPocketed: (id, pos) => {
-        sound.playPocket();
-        useGameStore.setState(s => ({
-          coins: s.coins.map(c => c.id === id ? { ...c, pocketed: true } : c),
-        }));
-        _spawnPocketVFX(id, pos, useGameStore.getState().coins);
-      },
-      onTick: (snapshot) => {
-        const strikerSnap = snapshot.find(s => s.id === 'striker');
-        const coinSnap    = snapshot.filter(s => s.id !== 'striker');
-        const cur = useGameStore.getState().coins;
-        useGameStore.setState({
-          coins: cur.map(c => {
-            const live = coinSnap.find(s => s.id === c.id);
-            return live ? { ...c, x: live.x, y: live.y } : c;
-          }),
-          liveStrikerPos: strikerSnap ? { x: strikerSnap.x, y: strikerSnap.y } : null,
-        });
-      },
-      onComplete: () => {
-        useGameStore.setState({ liveStrikerPos: null });
-        useGameStore.getState().applyResult(serverState);
-        if (foul) sound.playFoul();
-        if (serverState.winner) sound.playWin();
-      },
-    });
-  };
 
   const notify = (msg, persist = false) => {
     if (persist) setBanner(msg);
@@ -101,8 +34,8 @@ export function OnlineGame() {
   };
 
   const { shoot, requestRematch } = useOnlineGame({
-    onShotArrived:    animateShotRef,   // ← direct ref, called by socket handler
     onGameStart:      () => { setBanner(''); notify('Game started!'); },
+    onShotResult:     ({ foul }) => { if (foul) notify(`Foul: ${foul?.replace(/_/g, ' ')}`); },
     onGameOver:       () => {},
     onDisconnect:     ({ message }) => notify(message, true),
     onReconnect:      ({ message }) => { setBanner(''); notify(message); },

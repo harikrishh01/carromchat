@@ -3,6 +3,7 @@ import { useGameStore } from '../store/gameStore.js';
 import { connectSocket } from '../network/socket.js';
 import { GAME_STATUS } from '../constants/gameConstants.js';
 import { useSoundManager } from './useSoundManager.js';
+import { onlineAnimator } from '../services/onlineAnimator.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // useOnlineGame hook
@@ -49,11 +50,13 @@ export function useOnlineGame(callbacks = {}) {
       cbRef.current.onGameStart?.({});
     });
 
-    // ── Shot result: call animation function directly via ref ──────────────────
-    // onShotArrived is a ref set by OnlineGame.jsx each render — always current.
-    // Calling it directly avoids Zustand intermediate + useEffect timing issues.
+    // ── Shot result: run animation via module-level singleton ──────────────────
+    // onlineAnimator is initialised by OnlineGame.jsx's useEffect before any
+    // shot can arrive, so .physics is always a valid ClientPhysics instance.
     socket.off('shot_result').on('shot_result', ({ state: serverState, shotParams, foul }) => {
-      cbRef.current.onShotArrived?.current?.(shotParams, serverState, foul);
+      onlineAnimator.run(shotParams, serverState, foul, soundRef.current, () => {
+        cbRef.current.onShotResult?.({ foul });
+      });
     });
 
     // game_over arrives nearly simultaneously with shot_result (server sends both).
