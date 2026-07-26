@@ -53,20 +53,20 @@ export function OnlineGame() {
     shoot(angle, power, strikerX);
   }, [isMyTurn, shoot]);
 
-  // ── Synchronized timer: both clients derive timeLeft from server timestamp ─
+  // ── Turn countdown timer – resets each time the turn changes ────────────────
+  // Uses local countdown tied to store.turn so it works with OR without
+  // the backend sending turnStartedAt.
   useEffect(() => {
-    if (store.status !== GAME_STATUS.PLAYING || !store.turnStartedAt) {
+    if (store.status !== GAME_STATUS.PLAYING) {
       setShotTimeLeft(TURN_SECS);
       return;
     }
-    const update = () => {
-      const elapsed = Math.floor((Date.now() - store.turnStartedAt) / 1000);
-      setShotTimeLeft(Math.max(0, TURN_SECS - elapsed));
-    };
-    update();
-    const id = setInterval(update, 500); // 500ms tick for smooth display
+    setShotTimeLeft(TURN_SECS);
+    const id = setInterval(() => {
+      setShotTimeLeft(prev => Math.max(0, prev - 1));
+    }, 1000);
     return () => clearInterval(id);
-  }, [store.turnStartedAt, store.status]);
+  }, [store.turn, store.status]); // reset every turn change
 
   const p1     = store.players?.player1?.name || store.player1Name || 'Player 1';
   const p2     = store.players?.player2?.name || store.player2Name || 'Player 2';
@@ -115,12 +115,12 @@ export function OnlineGame() {
         <GameHUD player1Name={p1} player2Name={p2} shotTimeLeft={shotTimeLeft} />
       </div>
 
-      {/* Board + Slider */}
-      <div className="flex flex-col items-center gap-2 w-full max-w-2xl flex-1 justify-center">
+      {/* Board + Slider — slider always directly below the board, no centering tricks */}
+      <div className="flex flex-col items-center gap-3 w-full max-w-2xl">
         <div className="flex items-center justify-center w-full relative">
           <GameCanvas onShoot={handleShoot} isMyTurn={isMyTurn} flipped={flipped} />
 
-          {/* Opponent turn / simulating overlay — transparent, just blocks clicks */}
+          {/* Opponent turn overlay — transparent, just blocks clicks */}
           {!isMyTurn && store.status === GAME_STATUS.PLAYING && !banner && (
             <div
               className="absolute inset-0 pointer-events-auto flex items-end justify-center pb-4"
@@ -131,7 +131,6 @@ export function OnlineGame() {
                   ⏳ Opponent's turn
                 </div>
               )}
-              {/* During simulation: no overlay text — let animation show clearly */}
             </div>
           )}
         </div>
