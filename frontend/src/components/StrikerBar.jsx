@@ -7,14 +7,18 @@ const RANGE = STRIKER_LINE.X_MAX - STRIKER_LINE.X_MIN; // 200
 /**
  * Horizontal bar below the board that lets the player slide the striker
  * left / right along the baseline before shooting.
+ * When `flipped` is true (Player 2 in online mode), the slider direction
+ * is reversed so left = left on their rotated view.
  */
-export function StrikerBar({ isMyTurn }) {
+export function StrikerBar({ isMyTurn, flipped = false }) {
   const { strikerDragX, status, isSimulating } = useGameStore();
 
   const disabled = !isMyTurn || isSimulating || status !== GAME_STATUS.PLAYING;
 
-  // Convert board-X → 0-100 slider value
-  const sliderValue = Math.round(((strikerDragX - STRIKER_LINE.X_MIN) / RANGE) * 100);
+  // Map board-X → 0-100 slider value, reversing for flipped board
+  const sliderValue = flipped
+    ? Math.round(((STRIKER_LINE.X_MAX - strikerDragX) / RANGE) * 100)
+    : Math.round(((strikerDragX - STRIKER_LINE.X_MIN) / RANGE) * 100);
 
   const setStrikerX = useCallback((boardX) => {
     const clamped = Math.max(STRIKER_LINE.X_MIN, Math.min(STRIKER_LINE.X_MAX, boardX));
@@ -23,12 +27,17 @@ export function StrikerBar({ isMyTurn }) {
 
   const handleSlider = (e) => {
     const pct = Number(e.target.value);
-    setStrikerX(STRIKER_LINE.X_MIN + (pct / 100) * RANGE);
+    // Reverse mapping for Player 2's flipped view
+    const x = flipped
+      ? STRIKER_LINE.X_MAX - (pct / 100) * RANGE
+      : STRIKER_LINE.X_MIN + (pct / 100) * RANGE;
+    setStrikerX(x);
   };
 
   const nudge = (dir) => {
     const current = useGameStore.getState().strikerDragX;
-    setStrikerX(current + dir * 12);
+    // Reverse nudge direction for flipped board
+    setStrikerX(current + (flipped ? -dir : dir) * 12);
   };
 
   return (

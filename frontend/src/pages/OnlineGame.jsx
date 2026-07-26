@@ -28,7 +28,9 @@ export function OnlineGame() {
     onError: ({ message }) => notify(message),
   });
 
-  // isMyTurn: only true when it's this player's turn AND not waiting for server
+  // Player 2 sees the board flipped 180° so their baseline is always at the bottom
+  const flipped = store.myPlayerNum === 'player2';
+
   const isMyTurn = store.myPlayerNum === store.turn
     && !store.isSimulating
     && store.status === GAME_STATUS.PLAYING;
@@ -71,7 +73,7 @@ export function OnlineGame() {
       {/* Board + Slider grouped – slider directly below board */}
       <div className="flex flex-col items-center gap-2 w-full max-w-2xl flex-1 justify-center relative">
         <div className="flex items-center justify-center w-full relative">
-          <GameCanvas onShoot={handleShoot} isMyTurn={isMyTurn} />
+          <GameCanvas onShoot={handleShoot} isMyTurn={isMyTurn} flipped={flipped} />
 
           {/* Opponent turn overlay – covers board so they literally cannot interact */}
           {!isMyTurn && store.status === GAME_STATUS.PLAYING && (
@@ -87,7 +89,7 @@ export function OnlineGame() {
         </div>
 
         {/* Striker position bar – only useful on your turn */}
-        <StrikerBar isMyTurn={isMyTurn} />
+        <StrikerBar isMyTurn={isMyTurn} flipped={flipped} />
       </div>
 
       {/* Notification */}

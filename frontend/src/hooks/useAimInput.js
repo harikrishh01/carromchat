@@ -12,7 +12,7 @@ import { BOARD, STRIKER_LINE } from '../constants/gameConstants.js';
  *                     The further you pull, the more power.
  *  4. Pointer UP    – release to shoot forward.
  */
-export function useAimInput({ canvasRef, boardScale, onShoot }) {
+export function useAimInput({ canvasRef, boardScale, flipped = false, onShoot }) {
   const isDragging  = useRef(false);
   const lockedStrikerX = useRef(BOARD.CENTER);
 
@@ -20,11 +20,13 @@ export function useAimInput({ canvasRef, boardScale, onShoot }) {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
     const scale = boardScale || (rect.width / BOARD.SIZE);
-    return {
-      x: (clientX - rect.left) / scale,
-      y: (clientY - rect.top) / scale,
-    };
-  }, [canvasRef, boardScale]);
+    const rawX = (clientX - rect.left) / scale;
+    const rawY = (clientY - rect.top)  / scale;
+    // For a 180°-flipped canvas, screen coords are inverted in both axes
+    return flipped
+      ? { x: BOARD.SIZE - rawX, y: BOARD.SIZE - rawY }
+      : { x: rawX, y: rawY };
+  }, [canvasRef, boardScale, flipped]);
 
   const onPointerDown = useCallback((e) => {
     const { isSimulating, status, strikerDragX } = useGameStore.getState();

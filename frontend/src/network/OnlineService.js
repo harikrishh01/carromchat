@@ -66,10 +66,10 @@ export class OnlineService {
     });
 
     s.off('shot_result').on('shot_result', (result) => {
-      const { state, pocketed, strikerPocketed, foul, extraTurn } = result;
-      // Apply server-authoritative state (also resets isSimulating → false)
-      useGameStore.getState().applyResult(state);
-      window.__onShotResult?.({ pocketed, strikerPocketed, foul, extraTurn });
+      const { state, shotParams, pocketed, strikerPocketed, foul, extraTurn } = result;
+      // Don't apply state here — useOnlineGame runs physics animation first,
+      // then applies the authoritative server state when animation completes.
+      window.__onShotResult?.({ state, shotParams, pocketed, strikerPocketed, foul, extraTurn });
     });
 
     s.off('game_over').on('game_over', ({ winner, scores }) => {

@@ -8,7 +8,7 @@ import { BOARD, TURN, GAME_STATUS } from '../constants/gameConstants.js';
  * The main game canvas component.
  * Renders board via BoardRenderer and handles input via useAimInput.
  */
-export function GameCanvas({ onShoot, isMyTurn = true }) {
+export function GameCanvas({ onShoot, isMyTurn = true, flipped = false }) {
   const canvasRef = useRef(null);
   const rendererRef = useRef(null);
   const animFrameRef = useRef(null);
@@ -63,6 +63,7 @@ export function GameCanvas({ onShoot, isMyTurn = true }) {
 
   const { onPointerDown, onPointerMove, onPointerUp } = useAimInput({
     canvasRef,
+    flipped,
     onShoot: handleShoot,
   });
 
@@ -79,6 +80,8 @@ export function GameCanvas({ onShoot, isMyTurn = true }) {
         cursor: isMyTurn && store.status === GAME_STATUS.PLAYING ? 'crosshair' : 'default',
         borderRadius: '4px',
         boxShadow: '0 0 40px rgba(0,0,0,0.8)',
+        // Rotate 180° for Player 2 so their baseline is always at the bottom
+        transform: flipped ? 'rotate(180deg)' : 'none',
       }}
       onMouseDown={onPointerDown}
       onMouseMove={onPointerMove}
