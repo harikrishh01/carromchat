@@ -1,95 +1,24 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore.js';
 import { connectSocket } from '../network/socket.js';
-import { GAME_STATUS, POCKET } from '../constants/gameConstants.js';
+import { GAME_STATUS } from '../constants/gameConstants.js';
 import { useSoundManager } from './useSoundManager.js';
-import { ClientPhysics } from '../physics/ClientPhysics.js';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Standalone animation runner – no React closure dependencies.
-// Called directly from the socket event handler (registered once, stays stable).
-// ─────────────────────────────────────────────────────────────────────────────
-function _runShotAnimation(physicsRef, soundRef, shotParams, serverState, onDone) {
-  const physics = physicsRef.current;
-  const sound   = soundRef.current;
-  const store   = useGameStore.getState();
-
-  // Fallback: no physics available or no shot params — just jump to server state
-  if (!physics || !shotParams) {
-    store.applyResult(serverState);
-    onDone?.();
-    return;
-  }
-
-  useGameStore.setState({ isSimulating: true });
-  physics.loadState(store.coins, { x: shotParams.strikerX, y: store.strikerPos.y });
-
-  physics.shoot(shotParams.angle, shotParams.power, {
-    onPocketed: (id, pos) => {
-      sound.playPocket();
-      // Hide coin immediately so it doesn't ghost during animation
-      useGameStore.setState(s => ({
-        coins: s.coins.map(c => c.id === id ? { ...c, pocketed: true } : c),
-      }));
-      // Pocket VFX
-      const coinData = useGameStore.getState().coins.find(c => c.id === id);
-      const nearest = POCKET.POSITIONS.reduce((best, p) => {
-        const d = Math.hypot(p.x - pos.x, p.y - pos.y);
-        return d < best.d ? { p, d } : best;
-      }, { p: POCKET.POSITIONS[0], d: Infinity }).p;
-      useGameStore.getState().addPocketAnimation({
-        id: `${id}_${Date.now()}`,
-        coinId: id,
-        color: coinData?.color ?? 'black',
-        isQueen: id === 'queen',
-        x: pos.x, y: pos.y,
-        pocketX: nearest.x, pocketY: nearest.y,
-        startTime: Date.now(),
-        duration: 350,
-      });
-    },
-    onTick: (snapshot) => {
-      const strikerSnap = snapshot.find(s => s.id === 'striker');
-      const coinSnap    = snapshot.filter(s => s.id !== 'striker');
-      const cur = useGameStore.getState().coins;
-      const updated = cur.map(c => {
-        const live = coinSnap.find(s => s.id === c.id);
-        return live ? { ...c, x: live.x, y: live.y } : c;
-      });
-      useGameStore.setState({
-        coins: updated,
-        liveStrikerPos: strikerSnap ? { x: strikerSnap.x, y: strikerSnap.y } : null,
-      });
-    },
-    onComplete: () => {
-      useGameStore.setState({ liveStrikerPos: null });
-      // Apply authoritative server final state (corrects any float divergence)
-      useGameStore.getState().applyResult(serverState);
-      if (serverState.lastFoul) sound.playFoul();
-      if (serverState.winner)   sound.playWin();
-      onDone?.();
-    },
-  });
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // useOnlineGame hook
+//
+// Animation is NOT handled here. OnlineGame.jsx owns the physics engine
+// and provides an `onShotArrived` ref. When shot_result arrives, we call
+// that ref directly — no Zustand intermediate, no useEffect timing.
 // ─────────────────────────────────────────────────────────────────────────────
 export function useOnlineGame(callbacks = {}) {
   const sound      = useSoundManager();
-  const physicsRef = useRef(null);
   const soundRef   = useRef(sound);
-  soundRef.current = sound;                    // always latest, no stale closure
+  soundRef.current = sound;
 
   // cbRef holds the LATEST callback props without causing effect re-runs
   const cbRef = useRef(callbacks);
   cbRef.current = callbacks;
-
-  // ── Init physics once per mount ───────────────────────────────────────────
-  useEffect(() => {
-    physicsRef.current = new ClientPhysics();
-    return () => { physicsRef.current?.destroy(); physicsRef.current = null; };
-  }, []);
 
   // ── Register ALL socket events ONCE (empty deps) ──────────────────────────
   // cbRef / physicsRef / soundRef give access to latest values without deps.
@@ -120,10 +49,11 @@ export function useOnlineGame(callbacks = {}) {
       cbRef.current.onGameStart?.({});
     });
 
-    // ── Shot result: store in Zustand; OnlineGame.jsx watches and animates ──
-    // This decouples animation from socket callbacks so it runs in React lifecycle.
+    // ── Shot result: call animation function directly via ref ──────────────────
+    // onShotArrived is a ref set by OnlineGame.jsx each render — always current.
+    // Calling it directly avoids Zustand intermediate + useEffect timing issues.
     socket.off('shot_result').on('shot_result', ({ state: serverState, shotParams, foul }) => {
-      useGameStore.setState({ pendingOnlineShot: { shotParams, serverState, foul } });
+      cbRef.current.onShotArrived?.current?.(shotParams, serverState, foul);
     });
 
     // game_over arrives nearly simultaneously with shot_result (server sends both).

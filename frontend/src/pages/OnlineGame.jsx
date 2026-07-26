@@ -48,14 +48,61 @@ export function OnlineGame() {
     return () => { physicsRef.current?.destroy(); physicsRef.current = null; };
   }, []);
 
+  // ── animateShotRef is re-assigned every render, so it always captures
+  //    the latest physicsRef.current and sound. The socket handler calls it
+  //    directly — no Zustand intermediate, no useEffect timing dependency.
+  const animateShotRef = useRef(null);
+  animateShotRef.current = (shotParams, serverState, foul) => {
+    const physics  = physicsRef.current;
+    const preState = useGameStore.getState();
+
+    if (!physics || !shotParams) {
+      preState.applyResult(serverState);
+      if (foul) sound.playFoul();
+      if (serverState.winner) sound.playWin();
+      return;
+    }
+
+    useGameStore.setState({ isSimulating: true });
+    physics.loadState(preState.coins, { x: shotParams.strikerX, y: preState.strikerPos.y });
+
+    physics.shoot(shotParams.angle, shotParams.power, {
+      onPocketed: (id, pos) => {
+        sound.playPocket();
+        useGameStore.setState(s => ({
+          coins: s.coins.map(c => c.id === id ? { ...c, pocketed: true } : c),
+        }));
+        _spawnPocketVFX(id, pos, useGameStore.getState().coins);
+      },
+      onTick: (snapshot) => {
+        const strikerSnap = snapshot.find(s => s.id === 'striker');
+        const coinSnap    = snapshot.filter(s => s.id !== 'striker');
+        const cur = useGameStore.getState().coins;
+        useGameStore.setState({
+          coins: cur.map(c => {
+            const live = coinSnap.find(s => s.id === c.id);
+            return live ? { ...c, x: live.x, y: live.y } : c;
+          }),
+          liveStrikerPos: strikerSnap ? { x: strikerSnap.x, y: strikerSnap.y } : null,
+        });
+      },
+      onComplete: () => {
+        useGameStore.setState({ liveStrikerPos: null });
+        useGameStore.getState().applyResult(serverState);
+        if (foul) sound.playFoul();
+        if (serverState.winner) sound.playWin();
+      },
+    });
+  };
+
   const notify = (msg, persist = false) => {
     if (persist) setBanner(msg);
     else { setNotification(msg); setTimeout(() => setNotification(''), 4000); }
   };
 
   const { shoot, requestRematch } = useOnlineGame({
+    onShotArrived:    animateShotRef,   // ← direct ref, called by socket handler
     onGameStart:      () => { setBanner(''); notify('Game started!'); },
-    onShotResult:     ({ foul }) => { if (foul) notify(`Foul: ${foul.replace(/_/g, ' ')}`); },
     onGameOver:       () => {},
     onDisconnect:     ({ message }) => notify(message, true),
     onReconnect:      ({ message }) => { setBanner(''); notify(message); },
@@ -87,60 +134,6 @@ export function OnlineGame() {
     const id = setInterval(update, 500); // 500ms tick for smooth display
     return () => clearInterval(id);
   }, [store.turnStartedAt, store.status]);
-
-  // ── Online shot animation: triggered by pendingOnlineShot in store ─────────
-  // This runs in React's synchronous effect flow, so physicsRef is always valid.
-  useEffect(() => {
-    const pending = store.pendingOnlineShot;
-    if (!pending) return;
-
-    // Clear immediately so this effect doesn't re-trigger
-    useGameStore.setState({ pendingOnlineShot: null });
-
-    const { shotParams, serverState, foul } = pending;
-    const physics = physicsRef.current;
-    const preState = useGameStore.getState();
-
-    if (!physics || !shotParams) {
-      // Fallback: apply server state directly (no animation)
-      preState.applyResult(serverState);
-      if (foul) sound.playFoul();
-      if (serverState.winner) sound.playWin();
-      return;
-    }
-
-    useGameStore.setState({ isSimulating: true });
-    physics.loadState(preState.coins, { x: shotParams.strikerX, y: preState.strikerPos.y });
-
-    physics.shoot(shotParams.angle, shotParams.power, {
-      onPocketed: (id, pos) => {
-        sound.playPocket();
-        // Hide coin immediately (no ghost)
-        useGameStore.setState(s => ({
-          coins: s.coins.map(c => c.id === id ? { ...c, pocketed: true } : c),
-        }));
-        _spawnPocketVFX(id, pos, useGameStore.getState().coins);
-      },
-      onTick: (snapshot) => {
-        const strikerSnap = snapshot.find(s => s.id === 'striker');
-        const coinSnap    = snapshot.filter(s => s.id !== 'striker');
-        const cur = useGameStore.getState().coins;
-        useGameStore.setState({
-          coins: cur.map(c => {
-            const live = coinSnap.find(s => s.id === c.id);
-            return live ? { ...c, x: live.x, y: live.y } : c;
-          }),
-          liveStrikerPos: strikerSnap ? { x: strikerSnap.x, y: strikerSnap.y } : null,
-        });
-      },
-      onComplete: () => {
-        useGameStore.setState({ liveStrikerPos: null });
-        useGameStore.getState().applyResult(serverState);
-        if (foul) sound.playFoul();
-        if (serverState.winner) sound.playWin();
-      },
-    });
-  }, [store.pendingOnlineShot, sound]);  // eslint-disable-line
 
   const p1     = store.players?.player1?.name || store.player1Name || 'Player 1';
   const p2     = store.players?.player2?.name || store.player2Name || 'Player 2';
