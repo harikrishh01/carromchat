@@ -21,6 +21,10 @@ export function useOnlineGame(callbacks = {}) {
   const cbRef = useRef(callbacks);
   cbRef.current = callbacks;
 
+  // Locally cache the last shot params so the SHOOTER sees the correct animation
+  // direction even when the backend hasn’t been redeployed yet
+  const lastShotRef = useRef(null);
+
   // ── Register ALL socket events ONCE (empty deps) ──────────────────────────
   // cbRef / physicsRef / soundRef give access to latest values without deps.
   useEffect(() => {
@@ -51,10 +55,12 @@ export function useOnlineGame(callbacks = {}) {
     });
 
     // ── Shot result: run animation via module-level singleton ──────────────────
-    // onlineAnimator is initialised by OnlineGame.jsx's useEffect before any
-    // shot can arrive, so .physics is always a valid ClientPhysics instance.
+    // shotParams comes from backend (needs updated Railway deploy).
+    // Falls back to locally saved params so the shooter always gets correct direction.
     socket.off('shot_result').on('shot_result', ({ state: serverState, shotParams, foul }) => {
-      onlineAnimator.run(shotParams, serverState, foul, soundRef.current, () => {
+      const params = shotParams ?? lastShotRef.current; // server wins, local is fallback
+      lastShotRef.current = null;                       // clear after use
+      onlineAnimator.run(params, serverState, foul, soundRef.current, () => {
         cbRef.current.onShotResult?.({ foul });
       });
     });
@@ -139,6 +145,8 @@ export function useOnlineGame(callbacks = {}) {
   const shoot = useCallback((angle, power, strikerX) => {
     const { roomCode, myPlayerNum, turn, status, isSimulating } = useGameStore.getState();
     if (status !== GAME_STATUS.PLAYING || myPlayerNum !== turn || isSimulating) return;
+    // Save params so this player’s shot_result handler can use the correct angle
+    lastShotRef.current = { angle, power, strikerX };
     useGameStore.setState({ isSimulating: true });
     soundRef.current.playShoot();
     connectSocket().emit('shoot', { angle, power, strikerX, roomCode });
