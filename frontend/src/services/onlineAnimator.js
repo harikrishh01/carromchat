@@ -54,23 +54,17 @@ class OnlineAnimator {
   run(shotParams, serverState, foul, sound, onDone) {
     this._cancel();
 
-    const preState  = useGameStore.getState();
-    const startCoins = preState.coins.map(c => ({ ...c }));  // snapshot pre-shot
+    const preState   = useGameStore.getState();
+    const startCoins = preState.coins.map(c => ({ ...c })); // snapshot pre-shot
 
-    if (!shotParams) {
-      // No params — just apply final state (fallback, no animation)
-      preState.applyResult(serverState);
-      if (serverState.lastFoul) sound?.playFoul();
-      if (serverState.winner)   sound?.playWin();
-      onDone?.();
-      return;
-    }
+    // Tween always runs — no shotParams needed, animation goes from current → serverState
+    useGameStore.setState({ isSimulating: true });
 
-    // Striker start/end
-    const strikerStartX = shotParams.strikerX;
+    // Striker start — use shotParams.strikerX if available, else current baseline centre
+    const strikerStartX = shotParams?.strikerX ?? preState.strikerPos.x;
     const strikerStartY = preState.strikerPos.y;
 
-    // Striker travels ~60% of the way to center then rebounds off-screen
+    // Striker arcs ~55% of the way to board centre then fades out
     const strikerMidX = strikerStartX + (BOARD.CENTER - strikerStartX) * 0.55;
     const strikerMidY = strikerStartY + (BOARD.CENTER - strikerStartY) * 0.55;
 
