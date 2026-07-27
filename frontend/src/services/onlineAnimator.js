@@ -57,20 +57,26 @@ class OnlineAnimator {
     const preState   = useGameStore.getState();
     const startCoins = preState.coins.map(c => ({ ...c })); // snapshot pre-shot
 
-    // Tween always runs — no shotParams needed, animation goes from current → serverState
     useGameStore.setState({ isSimulating: true });
 
-    // Striker start — use shotParams.strikerX if available, else current baseline centre
+    // Striker start position
     const strikerStartX = shotParams?.strikerX ?? preState.strikerPos.x;
     const strikerStartY = preState.strikerPos.y;
 
-    // Striker arcs ~55% of the way to board centre then fades out
-    const strikerMidX = strikerStartX + (BOARD.CENTER - strikerStartX) * 0.55;
-    const strikerMidY = strikerStartY + (BOARD.CENTER - strikerStartY) * 0.55;
+    // ── Use actual shot angle so striker moves in the CORRECT direction ──────
+    // If shotParams is missing, infer angle from striker toward board center
+    const angle = shotParams?.angle
+      ?? Math.atan2(BOARD.CENTER - strikerStartY, BOARD.CENTER - strikerStartX);
+    const power     = shotParams?.power ?? 50;
+    const vMag      = power * 0.25;
 
-    useGameStore.setState({ isSimulating: true });
+    // Striker travels in shot direction for a distance proportional to power
+    // Clamp so it doesn't leave board visuals
+    const travelDist = Math.min(550, Math.max(80, vMag * 32));
+    const strikerEndX = strikerStartX + Math.cos(angle) * travelDist;
+    const strikerEndY = strikerStartY + Math.sin(angle) * travelDist;
 
-    // Coins that will be pocketed (present in preState but missing in serverState)
+    // Coins that will be pocketed this shot
     const finalCoinIds = new Set(serverState.coins.filter(c => !c.pocketed).map(c => c.id));
     const toBePocketed = startCoins.filter(c => !c.pocketed && !finalCoinIds.has(c.id));
 
@@ -90,41 +96,42 @@ class OnlineAnimator {
     const frame = (now) => {
       const elapsed = now - startTime;
       const rawT    = Math.min(elapsed / ANIM_DURATION, 1);
-      const t       = easeInOut(rawT);
 
-      // ── Striker ──────────────────────────────────────────────────────────
-      // Phase 0→0.4: move toward impact zone
-      // Phase 0.4→0.7: rebound / slow down
-      // Phase 0.7→1: fade out (return null → baseline)
+      // ── Striker ────────────────────────────────────────────────────────────
+      // Phase 0 → 0.45 : striker rushes forward in the ACTUAL shot direction (ease-out = fast then slow)
+      // Phase 0.45 → 0.70 : striker decelerates / impact zone
+      // Phase > 0.70 : striker disappears (liveStrikerPos = null)
       let liveStrikerPos = null;
-      if (rawT < 0.65) {
-        const strikerT = rawT < 0.4
-          ? easeInOut(rawT / 0.4)           // accelerate toward impact
-          : easeInOut(1 - (rawT - 0.4) / 0.25); // decelerate away
+      if (rawT < 0.70) {
+        // ease-out: fast start, slow end — feels like being fired
+        const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+        const strikerT = rawT < 0.45
+          ? easeOut(rawT / 0.45)                                   // rush forward
+          : 1 - easeInOut((rawT - 0.45) / 0.25) * 0.25;           // slight bounce-back
         liveStrikerPos = {
-          x: strikerStartX + (strikerMidX - strikerStartX) * strikerT,
-          y: strikerStartY + (strikerMidY - strikerStartY) * strikerT,
+          x: strikerStartX + (strikerEndX - strikerStartX) * strikerT,
+          y: strikerStartY + (strikerEndY - strikerStartY) * strikerT,
         };
       }
 
-      // ── Coins ─────────────────────────────────────────────────────────────
-      // Phase 0→0.3: coins mostly static (striker still moving)
-      // Phase 0.3→1: coins scatter to final positions
-      const coinPhaseStart = 0.25;
+      // ── Coins ──────────────────────────────────────────────────────────────
+      // Striker hits ~45% into animation → coins start moving then
+      // Phase 0 → 0.40 : coins stationary (striker is still approaching)
+      // Phase 0.40 → 1.0 : coins scatter to server final positions
+      const coinPhaseStart = 0.38;
       const coinT = rawT < coinPhaseStart
         ? 0
         : easeInOut((rawT - coinPhaseStart) / (1 - coinPhaseStart));
 
       const animCoins = startCoins.map(coin => {
-        if (coin.pocketed) return coin; // already pocketed before shot
+        if (coin.pocketed) return coin; // already pocketed before this shot
 
         // Coin to be pocketed: animate toward pocket
         if (pocketTargets.has(coin.id)) {
           const pocket = pocketTargets.get(coin.id);
-          if (rawT >= coinPhaseStart && !pocketSoundPlayed) {
+          if (coinT > 0.1 && !pocketSoundPlayed) {
             sound?.playPocket();
             pocketSoundPlayed = true;
-            // Spawn pocket VFX when coin is ~50% of the way in
           }
           if (coinT >= 0.5 && rawT >= coinPhaseStart) {
             // Spawn pocket animation once
