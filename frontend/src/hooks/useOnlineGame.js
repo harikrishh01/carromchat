@@ -59,6 +59,7 @@ export function useOnlineGame(callbacks = {}) {
     // Falls back to locally saved params so the shooter always gets correct direction.
     socket.off('shot_result').on('shot_result', ({ state: serverState, shotParams, foul }) => {
       const params = shotParams ?? lastShotRef.current; // server wins, local is fallback
+      lastShotRef.current?._cancelPreAnim?.();          // stop the pre-animation
       lastShotRef.current = null;                       // clear after use
       onlineAnimator.run(params, serverState, foul, soundRef.current, () => {
         cbRef.current.onShotResult?.({ foul });
@@ -149,6 +150,36 @@ export function useOnlineGame(callbacks = {}) {
     lastShotRef.current = { angle, power, strikerX };
     useGameStore.setState({ isSimulating: true });
     soundRef.current.playShoot();
+    // Immediately animate the striker forward so there's no frozen delay
+    // while the server computes physics (~200-400ms round trip).
+    // The full physics animation replaces this once shot_result arrives.
+    const startY   = useGameStore.getState().strikerPos.y;
+    const startX   = strikerX;
+    const vMag     = power * 0.25;
+    const dist     = Math.min(500, Math.max(60, vMag * 28));
+    const endX     = startX + Math.cos(angle) * dist;
+    const endY     = startY + Math.sin(angle) * dist;
+    const started  = performance.now();
+    const duration = 350; // ms — covers typical server round-trip
+    let   rafId;
+
+    const preAnim = (now) => {
+      const t = Math.min((now - started) / duration, 1);
+      const e = 1 - Math.pow(1 - t, 2); // ease-out
+      useGameStore.setState({
+        liveStrikerPos: { x: startX + (endX - startX) * e, y: startY + (endY - startY) * e },
+      });
+      if (t < 1) {
+        rafId = requestAnimationFrame(preAnim);
+      }
+    };
+    rafId = requestAnimationFrame(preAnim);
+
+    // Store cancel handle so shot_result handler can stop it before running real animation
+    lastShotRef.current._cancelPreAnim = () => {
+      cancelAnimationFrame(rafId);
+      useGameStore.setState({ liveStrikerPos: null });
+    };
     connectSocket().emit('shoot', { angle, power, strikerX, roomCode });
   }, []);
 
