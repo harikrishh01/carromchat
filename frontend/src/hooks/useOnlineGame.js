@@ -85,6 +85,13 @@ export function useOnlineGame(callbacks = {}) {
 
   const createRoom = useCallback((playerName) => { connectSocket().emit("create_room", { playerName }); }, []);
   const joinRoom = useCallback((roomCode, playerName) => { connectSocket().emit("join_room", { roomCode: roomCode.toUpperCase(), playerName }); }, []);
+  const leaveRoom = useCallback(() => {
+    const { roomCode } = useGameStore.getState();
+    if (roomCode) {
+      connectSocket().emit("leave_room", { roomCode });
+      // Keep sessionStorage so they can rejoin via code
+    }
+  }, []);
   const shoot = useCallback((angle, power, strikerX) => {
     const { roomCode, myPlayerNum, turn, status, isSimulating } = useGameStore.getState();
     if (status !== GAME_STATUS.PLAYING || myPlayerNum !== turn || isSimulating) return;
@@ -95,5 +102,5 @@ export function useOnlineGame(callbacks = {}) {
     connectSocket().emit("shoot", { angle, power, strikerX, roomCode });
   }, []);
   const requestRematch = useCallback(() => { connectSocket().emit("request_rematch", { roomCode: useGameStore.getState().roomCode }); }, []);
-  return { createRoom, joinRoom, shoot, requestRematch };
+  return { createRoom, joinRoom, leaveRoom, shoot, requestRematch };
 }

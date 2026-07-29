@@ -16,12 +16,19 @@ const RECONNECT_SECS  = 90; // match backend reconnect window
 export function OnlineGame() {
   const navigate   = useNavigate();
   const store      = useGameStore();
-  const [showSettings, setShowSettings] = useState(false);
-  const [banner,       setBanner]       = useState('');
-  const [notification, setNotification] = useState('');
-  const [shotTimeLeft, setShotTimeLeft] = useState(TURN_SECS);
-  const [reconnectLeft, setReconnectLeft] = useState(0); // countdown while opponent is disconnected
+  const [showSettings,     setShowSettings]     = useState(false);
+  const [banner,           setBanner]           = useState('');
+  const [notification,     setNotification]     = useState('');
+  const [shotTimeLeft,     setShotTimeLeft]     = useState(TURN_SECS);
+  const [reconnectLeft,    setReconnectLeft]    = useState(0);
+  const [showQuitConfirm,  setShowQuitConfirm]  = useState(false);
   const reconnectTimerRef = useRef(null);
+
+  const handleQuitConfirmed = useCallback(() => {
+    setShowQuitConfirm(false);
+    leaveRoom();
+    navigate('/online');
+  }, [leaveRoom, navigate]);
 
   // Starts the 90s reconnect countdown visible in the banner
   const startReconnectCountdown = useCallback(() => {
@@ -62,7 +69,7 @@ export function OnlineGame() {
     else { setNotification(msg); setTimeout(() => setNotification(''), 4000); }
   };
 
-  const { shoot, requestRematch } = useOnlineGame({
+  const { shoot, requestRematch, leaveRoom } = useOnlineGame({
     onGameStart:      () => { setBanner(''); stopReconnectCountdown(); notify('Game started!'); },
     onShotResult:     ({ foul }) => { if (foul) notify(`Foul: ${foul?.replace(/_/g, ' ')}`); },
     onGameOver:       () => {},
@@ -133,12 +140,27 @@ export function OnlineGame() {
 
       {/* Top bar */}
       <div className="w-full max-w-2xl flex items-center justify-between px-2">
-        <button onClick={() => navigate('/online')} className="text-gray-400 hover:text-white text-sm">← Menu</button>
+        <button
+          onClick={() => store.status === GAME_STATUS.PLAYING ? setShowQuitConfirm(true) : navigate('/online')}
+          className="text-gray-400 hover:text-white text-sm"
+        >
+          ← Menu
+        </button>
         <div className="text-center">
           <span className="text-yellow-400 font-bold text-sm tracking-widest uppercase">Online Match</span>
           {store.roomCode && <div className="text-gray-500 text-xs">Room: {store.roomCode}</div>}
         </div>
-        <button onClick={() => setShowSettings(true)} className="text-gray-400 hover:text-white text-sm">⚙️</button>
+        <div className="flex items-center gap-2">
+          {store.status === GAME_STATUS.PLAYING && (
+            <button
+              onClick={() => setShowQuitConfirm(true)}
+              className="text-red-400 hover:text-red-300 text-xs font-bold px-2 py-1 rounded-lg border border-red-800 hover:border-red-600 transition-colors"
+            >
+              Quit
+            </button>
+          )}
+          <button onClick={() => setShowSettings(true)} className="text-gray-400 hover:text-white text-sm">⚙️</button>
+        </div>
       </div>
 
       {/* Player identity with coin visual */}
@@ -200,6 +222,31 @@ export function OnlineGame() {
       {showSettings && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <SettingsPanel onClose={() => setShowSettings(false)} />
+        </div>
+      )}
+
+      {/* Quit confirmation modal */}
+      {showQuitConfirm && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-red-800/60 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
+            <div className="text-3xl mb-3">⚠️</div>
+            <h3 className="text-white font-bold text-lg mb-2">Quit Match?</h3>
+            <p className="text-gray-400 text-sm mb-6">A match is in progress. Do you want to quit?</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowQuitConfirm(false)}
+                className="flex-1 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 text-white font-bold transition-colors"
+              >
+                Stay
+              </button>
+              <button
+                onClick={handleQuitConfirmed}
+                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold transition-colors"
+              >
+                Quit
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
