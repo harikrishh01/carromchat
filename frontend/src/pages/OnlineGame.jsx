@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../store/gameStore.js';
 import { useOnlineGame } from '../hooks/useOnlineGame.js';
@@ -10,7 +10,8 @@ import { StrikerBar } from '../components/StrikerBar.jsx';
 import { GAME_STATUS, SHOT_TIMEOUT } from '../constants/gameConstants.js';
 import { onlineAnimator } from '../services/onlineAnimator.js';
 
-const TURN_SECS = Math.floor(SHOT_TIMEOUT / 1000);
+const TURN_SECS       = Math.floor(SHOT_TIMEOUT / 1000);
+const RECONNECT_SECS  = 90; // match backend reconnect window
 
 export function OnlineGame() {
   const navigate   = useNavigate();
@@ -19,6 +20,34 @@ export function OnlineGame() {
   const [banner,       setBanner]       = useState('');
   const [notification, setNotification] = useState('');
   const [shotTimeLeft, setShotTimeLeft] = useState(TURN_SECS);
+  const [reconnectLeft, setReconnectLeft] = useState(0); // countdown while opponent is disconnected
+  const reconnectTimerRef = useRef(null);
+
+  // Starts the 90s reconnect countdown visible in the banner
+  const startReconnectCountdown = useCallback(() => {
+    setReconnectLeft(RECONNECT_SECS);
+    clearInterval(reconnectTimerRef.current);
+    reconnectTimerRef.current = setInterval(() => {
+      setReconnectLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(reconnectTimerRef.current);
+          // Client-side fallback: end the match if server hasn’t fired connection_lost yet
+          const { myPlayerNum } = useGameStore.getState();
+          if (myPlayerNum && useGameStore.getState().status !== GAME_STATUS.FINISHED) {
+            useGameStore.setState({ winner: myPlayerNum, status: GAME_STATUS.FINISHED, isSimulating: false });
+          }
+          setBanner('');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  const stopReconnectCountdown = useCallback(() => {
+    clearInterval(reconnectTimerRef.current);
+    setReconnectLeft(0);
+  }, []);
 
   // ── Init the module-level physics singleton for online animation ──────────
   // onlineAnimator.init() creates a fresh ClientPhysics instance.
@@ -34,13 +63,26 @@ export function OnlineGame() {
   };
 
   const { shoot, requestRematch } = useOnlineGame({
-    onGameStart:      () => { setBanner(''); notify('Game started!'); },
+    onGameStart:      () => { setBanner(''); stopReconnectCountdown(); notify('Game started!'); },
     onShotResult:     ({ foul }) => { if (foul) notify(`Foul: ${foul?.replace(/_/g, ' ')}`); },
     onGameOver:       () => {},
-    onDisconnect:     ({ message }) => notify(message, true),
-    onReconnect:      ({ message }) => { setBanner(''); notify(message); },
-    onConnectionLost: ({ message }) => notify(message),
-    onError:          ({ message }) => notify(message),
+    onDisconnect:     ({ message }) => {
+      // Show banner + start countdown
+      startReconnectCountdown();
+      setBanner(message);
+    },
+    onReconnect:      ({ message }) => {
+      stopReconnectCountdown();
+      setBanner('');
+      notify(message);
+    },
+    onConnectionLost: ({ message }) => {
+      stopReconnectCountdown();
+      setBanner('');
+      // winner already set by useOnlineGame handler — WinnerPopup renders automatically
+      notify(message);
+    },
+    onError: ({ message }) => notify(message),
   });
 
   const flipped  = store.myPlayerNum === 'player2';
@@ -76,11 +118,16 @@ export function OnlineGame() {
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center p-2 pt-2 gap-2">
 
-      {/* Disconnect / sync banner */}
+      {/* Disconnect banner with live countdown */}
       {banner && (
-        <div className="w-full max-w-2xl bg-red-900/80 text-red-200 text-sm font-semibold px-4 py-2 rounded-xl text-center border border-red-700 flex items-center justify-center gap-2">
+        <div className="w-full max-w-2xl bg-red-900/80 text-red-200 text-sm font-semibold px-4 py-2 rounded-xl text-center border border-red-700 flex items-center justify-center gap-3">
           <span className="animate-pulse">●</span>
-          {banner}
+          <span>{banner}</span>
+          {reconnectLeft > 0 && (
+            <span className="ml-1 bg-red-800 px-2 py-0.5 rounded-lg tabular-nums text-red-100">
+              {reconnectLeft}s
+            </span>
+          )}
         </div>
       )}
 
