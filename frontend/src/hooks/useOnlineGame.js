@@ -18,10 +18,13 @@ export function useOnlineGame(callbacks = {}) {
     socket.off("room_created").on("room_created", ({ roomCode, playerNum, state }) => {
       const s = useGameStore.getState(); s.setRoomCode(roomCode); s.setMyPlayerNum(playerNum); s.applyResult(state);
       useGameStore.setState({ status: GAME_STATUS.WAITING }); cbRef.current.onRoomCreated?.({ roomCode, playerNum });
+      // Persist so page refresh can auto-rejoin
+      sessionStorage.setItem('carrom_room', JSON.stringify({ roomCode, playerNum }));
     });
     socket.off("room_joined").on("room_joined", ({ roomCode, playerNum, state }) => {
       const s = useGameStore.getState(); s.setRoomCode(roomCode); s.setMyPlayerNum(playerNum); s.applyResult(state);
       cbRef.current.onRoomJoined?.({ roomCode, playerNum });
+      sessionStorage.setItem('carrom_room', JSON.stringify({ roomCode, playerNum }));
     });
     socket.off("game_start").on("game_start", ({ state }) => {
       useGameStore.getState().applyResult(state);
@@ -37,6 +40,7 @@ export function useOnlineGame(callbacks = {}) {
     });
     socket.off("game_over").on("game_over", ({ winner, scores }) => {
       if (!useGameStore.getState().isSimulating) useGameStore.setState({ winner, scores, status: GAME_STATUS.FINISHED });
+      sessionStorage.removeItem('carrom_room');
       cbRef.current.onGameOver?.({ winner, scores });
     });
     socket.off("turn_timeout").on("turn_timeout", ({ state }) => { useGameStore.getState().applyResult(state); });
@@ -47,18 +51,33 @@ export function useOnlineGame(callbacks = {}) {
     socket.off("connection_lost").on("connection_lost", ({ message }) => {
       const { myPlayerNum } = useGameStore.getState();
       if (myPlayerNum) useGameStore.setState({ winner: myPlayerNum, status: GAME_STATUS.FINISHED, isSimulating: false });
+      sessionStorage.removeItem('carrom_room');
       cbRef.current.onConnectionLost?.({ message });
     });
     socket.off("rejoin_ack").on("rejoin_ack", ({ state, playerNum }) => {
       useGameStore.getState().applyResult(state);
       useGameStore.setState({ status: GAME_STATUS.PLAYING, isSimulating: false });
-      if (!useGameStore.getState().myPlayerNum) useGameStore.setState({ myPlayerNum: playerNum });
+      const store = useGameStore.getState();
+      const pNum = playerNum ?? store.myPlayerNum;
+      if (!store.myPlayerNum) useGameStore.setState({ myPlayerNum: pNum });
+      if (pNum && store.roomCode) sessionStorage.setItem('carrom_room', JSON.stringify({ roomCode: store.roomCode, playerNum: pNum }));
       cbRef.current.onReconnect?.({ message: "Reconnected. Game resumed." });
     });
     socket.off("error").on("error", ({ message }) => { useGameStore.setState({ isSimulating: false }); cbRef.current.onError?.({ message }); });
     socket.off("invalid_shot").on("invalid_shot", () => { useGameStore.setState({ isSimulating: false }); onlineAnimator.destroy(); onlineAnimator.init(); });
     socket.off("connect").on("connect", () => {
-      const { roomCode, myPlayerNum } = useGameStore.getState();
+      // Try Zustand first, then sessionStorage (survives page refresh)
+      let { roomCode, myPlayerNum } = useGameStore.getState();
+      if (!roomCode || !myPlayerNum) {
+        try {
+          const saved = JSON.parse(sessionStorage.getItem('carrom_room') || 'null');
+          if (saved?.roomCode && saved?.playerNum) {
+            roomCode = saved.roomCode;
+            myPlayerNum = saved.playerNum;
+            useGameStore.setState({ roomCode, myPlayerNum: saved.playerNum });
+          }
+        } catch (_) {}
+      }
       if (roomCode && myPlayerNum) socket.emit("rejoin_room", { roomCode, playerNum: myPlayerNum });
     });
     return () => { ["room_created","room_joined","game_start","shot_result","game_over","turn_timeout","player_disconnected","player_reconnected","connection_lost","rejoin_ack","error","invalid_shot","connect"].forEach(e => socket.off(e)); };
